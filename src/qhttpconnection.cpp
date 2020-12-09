@@ -73,14 +73,16 @@ QHttpConnection::~QHttpConnection()
 void QHttpConnection::socketDisconnected()
 {
     deleteLater();
+    invalidateRequest();
+}
 
-    if (m_request) {
-        if (m_request->successful())
-            return;
-
-        m_request->setSuccessful(false);
-        emit m_request->end();
+void QHttpConnection::invalidateRequest()
+{
+    if (m_request && !m_request->successful()) {
+        Q_EMIT m_request->end();
     }
+
+    m_request = NULL;
 }
 
 void QHttpConnection::updateWriteCount(qint64 count)
@@ -93,7 +95,7 @@ void QHttpConnection::updateWriteCount(qint64 count)
     {
         m_transmitLen = 0;
         m_transmitPos = 0;
-        emit allBytesWritten();
+        Q_EMIT allBytesWritten();
     }
 }
 
@@ -118,6 +120,11 @@ void QHttpConnection::flush()
     m_socket->flush();
 }
 
+void QHttpConnection::waitForBytesWritten()
+{
+    m_socket->waitForBytesWritten();
+}
+
 void QHttpConnection::responseDone()
 {
     QHttpResponse *response = qobject_cast<QHttpResponse *>(QObject::sender());
@@ -140,7 +147,7 @@ QUrl createUrl(const char *urlData, const http_parser_url &urlInfo)
     url.setScheme(CHECK_AND_GET_FIELD(urlData, urlInfo, UF_SCHEMA));
     url.setHost(CHECK_AND_GET_FIELD(urlData, urlInfo, UF_HOST));
     // Port is dealt with separately since it is available as an integer.
-    url.setPath(CHECK_AND_GET_FIELD(urlData, urlInfo, UF_PATH));
+    url.setPath(CHECK_AND_GET_FIELD(urlData, urlInfo, UF_PATH), QUrl::TolerantMode);
 #if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
     url.setQuery(CHECK_AND_GET_FIELD(urlData, urlInfo, UF_QUERY));
 #else
@@ -176,6 +183,11 @@ int QHttpConnection::MessageBegin(http_parser *parser)
     // The QHttpRequest should not be parented to this, since it's memory
     // management is the responsibility of the user of the library.
     theConnection->m_request = new QHttpRequest(theConnection);
+
+    // Invalidate the request when it is deleted to prevent keep-alive requests
+    // from calling a signal on a deleted object.
+    connect(theConnection->m_request, SIGNAL(destroyed(QObject*)), theConnection, SLOT(invalidateRequest()));
+
     return 0;
 }
 
@@ -218,7 +230,7 @@ int QHttpConnection::HeadersComplete(http_parser *parser)
     connect(response, SIGNAL(done()), theConnection, SLOT(responseDone()));
 
     // we are good to go!
-    emit theConnection->newRequest(theConnection->m_request, response);
+    Q_EMIT theConnection->newRequest(theConnection->m_request, response);
     return 0;
 }
 
@@ -229,7 +241,7 @@ int QHttpConnection::MessageComplete(http_parser *parser)
     Q_ASSERT(theConnection->m_request);
 
     theConnection->m_request->setSuccessful(true);
-    emit theConnection->m_request->end();
+    Q_EMIT theConnection->m_request->end();
     return 0;
 }
 
@@ -281,7 +293,7 @@ int QHttpConnection::Body(http_parser *parser, const char *at, size_t length)
     QHttpConnection *theConnection = static_cast<QHttpConnection *>(parser->data);
     Q_ASSERT(theConnection->m_request);
 
-    emit theConnection->m_request->data(QByteArray(at, length));
+    Q_EMIT theConnection->m_request->data(QByteArray(at, length));
     return 0;
 }
 

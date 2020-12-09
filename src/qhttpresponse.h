@@ -91,7 +91,7 @@ public:
     friend class QHttpConnection;
     /// @endcond
 
-public slots:
+public Q_SLOTS:
     /// Sets a response header @c field to @c value.
     /** @note You must call this with all your custom headers
         before calling writeHead(), write() or end().
@@ -113,6 +113,14 @@ public slots:
     /** @note writeHead() must be called before this function. */
     void write(const QByteArray &data);
 
+    /// Flushes the written data to the client.
+    /** @note writeHead() must be called before this function. */
+    void flush();
+
+    /// Waiting for bytes to be written. See QAbstractSocket::waitForBytesWritten in the Qt documentation
+    /** @note writeHead() must be called before this function. */
+    void waitForBytesWritten();
+
     /// End/finish the response.
     /** Data will be flushed to the underlying socket
         and the connection itself will be closed if
@@ -123,7 +131,7 @@ public slots:
         @param data Optional data to be written before finishing. */
     void end(const QByteArray &data = "");
 
-signals:
+Q_SIGNALS:
     /// Emitted when all the data has been sent
     /** This signal indicates that the underlaying socket has transmitted all
         of it's buffered data. It is possible to implement memory-efficient
@@ -157,7 +165,7 @@ private:
     bool m_useChunkedEncoding;
     bool m_finished;
 
-private slots:
+private Q_SLOTS:
     void connectionClosed();
 };
 
